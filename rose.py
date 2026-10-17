@@ -14,38 +14,26 @@ FONT_FALLBACKS = ("Georgia", "Times New Roman", "Arial")
 SEED = 17
 
 PHRASES = [
-    "I LOVE YOU", "I love you", "Te amo", "Ti amo", "Je t'aime",
-    "Ich liebe dich", "Eu te amo", "Seni seviyorum", "Я тебя люблю",
-    "사랑해", "愛してる", "我爱你", "मैं तुमसे प्यार करती हूँ",
-    "मैं तुमसे प्यार करता हूँ", "Σ' αγαπώ", "Ik hou van jou",
-    "Jag älskar dig", "Kocham cię", "ฉันรักคุณ", "Anh yêu em",
-    "Aku cinta kamu", "Mahal kita", "אני אוהבת אותך", "أحبك",
-    "నేను నిన్ను ప్రేమిస్తున్నాను", "நான் உன்னை காதலிக்கிறேன்",
-    "আমি তোমাকে ভালোবাসি", "Volim te", "Te iubesc", "Ljubim te",
-    "Nakupenda", "Я тебе кохаю", "Miluji tě", "Szeretlek",
-    "Rakastan sinua", "Jeg elsker dig"
+    "Manya", "MANYA", "मान्या", "মান্যা", "மான்யா", "మాన్య",
+    "Манья", "Μάνια", "マーニャ", "마냐", "曼雅", "มันยา",
+    "مانيا", "מניה", "Mánya", "Manya"
 ]
 
 ACCENTS = [
-    "LOVE", "TE AMO", "AMOUR", "TI AMO", "I LOVE YOU", "AMOR",
-    "愛してる", "사랑해", "我爱你", "LOVE YOU", "JE T'AIME",
-    "SZERETLEK", "NAKUPENDA"
+    "MANYA", "Manya", "मान्या", "マーニャ", "마냐", "曼雅",
+    "Манья", "MANYA", "Μάνια", "مانيا"
 ]
 
 SHORT_PHRASES = [
-    "Te amo", "Ti amo", "AMOR", "LOVE", "愛してる", "사랑해", "我爱你",
-    "Amour", "I love you", "Mahal kita", "Te iubesc", "Volim te",
-    "Szeretlek", "Miluji tě", "Nakupenda"
+    "Manya", "MANYA", "मान्या", "মান্যা", "மான்யா", "మాన్య",
+    "Манья", "Μάνια", "マーニャ", "마냐", "曼雅", "มันยา",
+    "مانيا", "מניה", "Mánya"
 ]
 
 HEAD_WORDS = PHRASES + [
-    "LOVE", "LOVE", "LOVE YOU", "AMOR", "AMOR", "AMOUR", "AMOUR",
-    "AMORE", "LIEBE", "TE AMO", "TE AMO", "TI AMO", "TI AMO",
-    "TE QUIERO", "TE QUIERO", "JE T'AIME", "I LOVE YOU", "I LOVE YOU",
-    "愛", "愛してる", "愛してる", "사랑", "사랑해", "사랑해", "我爱你",
-    "Mahal kita", "รักคุณ", "ANH YÊU EM", "तुमसे प्यार है",
-    "నిన్ను ప్రేమిస్తున్నా", "உன்னை காதலிக்கிறேன்", "ভালোবাসি",
-    "أحبك", "LOVE", "AMOR", "AMOUR", "Nakupenda", "Szeretlek"
+    "MANYA", "MANYA", "Manya", "Manya", "मान्या", "मान्या",
+    "マーニャ", "마냐", "曼雅", "Манья", "Μάνια", "มันยา",
+    "مانيا", "মান্যা", "மான்யா", "మాన్య", "MANYA", "Manya"
 ]
 
 HEAD_SIZES = (7, 8, 9, 10, 11, 12, 13, 14)
@@ -61,18 +49,16 @@ def ellipse_poly(cx, cy, rx, ry, points=160):
         for i in range(points)
     ]
 
-HEAD_SHAPES = [
-    ellipse_poly(400, 180, 145, 90),
-    ellipse_poly(330, 180, 120, 83),
-    ellipse_poly(470, 180, 120, 83),
-    ellipse_poly(275, 260, 98, 112),
-    ellipse_poly(525, 260, 98, 112),
-    ellipse_poly(338, 325, 118, 126),
-    ellipse_poly(462, 325, 118, 126),
-    [(230, 330), (290, 365), (348, 414), (400, 532),
-     (452, 414), (510, 365), (570, 330), (522, 452),
-     (400, 542), (278, 452)],
-]
+def heart_poly(cx, cy, scale, points=240):
+    pts = []
+    for i in range(points):
+        t = 2 * m.pi * i / points
+        hx_ = 16 * m.sin(t) ** 3
+        hy_ = 13 * m.cos(t) - 5 * m.cos(2 * t) - 2 * m.cos(3 * t) - m.cos(4 * t)
+        pts.append((cx + scale * hx_, cy - scale * hy_))
+    return pts
+
+HEAD_SHAPES = [heart_poly(400, 262, 14)]
 
 STEM = [(378, 493), (422, 493), (427, 752), (408, 772),
         (390, 760), (374, 600)]
@@ -82,7 +68,7 @@ RIGHT_LEAF = [(406, 619), (442, 581), (491, 561), (553, 578),
               (578, 600), (535, 640), (476, 660), (425, 649)]
 
 root = tk.Tk()
-root.title("A Rose Written in Every Language")
+root.title("A Heart Flower Written for Manya")
 root.configure(bg=BG)
 root.resizable(False, False)
 canvas = tk.Canvas(root, width=W, height=H, bg=BG, highlightthickness=0)
@@ -194,7 +180,7 @@ def intersect_spans(a_spans, b_spans, minimum=15):
     return merge_spans(out)
 
 def rose_color(x, y, size, edge=False):
-    dx, dy = (x - 400) / 210, (y - 300) / 220
+    dx, dy = (x - 400) / 230, (y - 270) / 200
     rad = m.sqrt(dx * dx + dy * dy)
     if rad > 0.82:
         palette = ["#8f0b2b", "#ae1238", "#c41d48", "#d52b53"]
@@ -305,19 +291,19 @@ def build_region(polygons, y_start, y_end, row_h, kind):
 
     return placed
 
-head_row_h = max(font_for("I LOVE YOU", s).metrics("linespace") for s in (9, 10, 11)) + 1
-leaf_row_h = max(font_for("Te amo", s).metrics("linespace") for s in (7, 8, 9)) + 1
-stem_row_h = max(font_for("Te amo", s).metrics("linespace") for s in (6, 7, 8)) + 1
+head_row_h = max(font_for("MANYA", s).metrics("linespace") for s in (9, 10, 11)) + 1
+leaf_row_h = max(font_for("Manya", s).metrics("linespace") for s in (7, 8, 9)) + 1
+stem_row_h = max(font_for("Manya", s).metrics("linespace") for s in (6, 7, 8)) + 1
 
 placed = []
-placed += build_region(HEAD_SHAPES, 88, 540, head_row_h, "head")
+placed += build_region(HEAD_SHAPES, 92, 505, head_row_h, "head")
 placed += build_region([LEFT_LEAF], 543, 618, leaf_row_h, "leaf")
 placed += build_region([RIGHT_LEAF], 575, 651, leaf_row_h, "leaf")
 placed += build_region([STEM], 492, 773, stem_row_h, "stem")
 
 outer = [p for p in placed if p["edge"]]
 inner = [p for p in placed if not p["edge"]]
-outer.sort(key=lambda p: m.atan2(p["y"] - 300, p["x"] - 400) % (2 * m.pi))
+outer.sort(key=lambda p: m.atan2(p["y"] - 270, p["x"] - 400) % (2 * m.pi))
 inner.sort(key=lambda p: rng.random())
 ORDER = outer + inner
 
