@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Heart Flower Written for Manya</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #060208; }
+  body { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { display: block; cursor: pointer; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A heart-shaped flower made from the name Manya written in many languages"></canvas>
+<script>
+(() => {
+  const W = 800, H = 800;
+  const DURATION = 10;      // seconds to write the whole flower
+  const TICK = 16;          // ms per simulation step
+  const ANIM = 38;          // frames each word takes to settle
+  const LIFT = 32;
+  const GAP = 3;
+  const BG = "#060208";
+  const SEED = 17;
+  const FS = 1.3;           // converts the original point sizes to canvas pixels
+  const FAMILY = 'Georgia, "Times New Roman", "Nirmala UI", "Noto Sans Devanagari", "Noto Sans Bengali", ' +
+    '"Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Thai", "Noto Sans Hebrew", "Noto Sans Arabic", ' +
+    '"Noto Sans JP", "Noto Sans KR", "Noto Sans SC", "Hiragino Sans", "Yu Gothic UI", "Malgun Gothic", ' +
+    '"Apple SD Gothic Neo", "PingFang SC", "Microsoft YaHei", "Segoe UI", Arial, sans-serif';
+
+  const PHRASES = [
+    "Manya", "MANYA", "मान्या", "মান্যা", "மான்யா", "మాన్య",
+    "Манья", "Μάνια", "マーニャ", "마냐", "曼雅", "มันยา",
+    "مانيا", "מניה", "Mánya", "Manya"
+  ];
+  const ACCENTS = [
+    "MANYA", "Manya", "मान्या", "マーニャ", "마냐", "曼雅",
+    "Манья", "MANYA", "Μάνια", "مانيا"
+  ];
+  const SHORT_PHRASES = [
+    "Manya", "MANYA", "मान्या", "মান্যা", "மான்யா", "మాన్య",
+    "Манья", "Μάνια", "マーニャ", "마냐", "曼雅", "มันยา",
+    "مانيا", "מניה", "Mánya"
+  ];
+  const HEAD_WORDS = PHRASES.concat([
+    "MANYA", "MANYA", "Manya", "Manya", "मान्या", "मान्या",
+    "マーニャ", "마냐", "曼雅", "Манья", "Μάνια", "มันยา",
+    "مانيا", "মান্যা", "மான்யா", "మాన్య", "MANYA", "Manya"
+  ]);
+
+  const HEAD_SIZES = [7, 8, 9, 10, 11, 12, 13, 14];
+  const HEAD_WEIGHTS = [2, 4, 5, 5, 4, 2, 1, 0.5];
+
+  // ---------- seeded random ----------
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  let rand = mulberry32(SEED);
+  const uniform = (a, b) => a + (b - a) * rand();
+  const choice = (arr) => arr[Math.floor(rand() * arr.length)];
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+  function weighted(items, weights) {
+    const total = weights.reduce((a, b) => a + b, 0);
+    let r = rand() * total;
+    for (let i = 0; i < items.length; i++) {
+      r -= weights[i];
+      if (r <= 0) return items[i];
+    }
+    return items[items.length - 1];
+  }
+
+  // ---------- shapes ----------
+  function heartPoly(cx, cy, scale, points = 240) {
+    const pts = [];
+    for (let i = 0; i < points; i++) {
+      const t = 2 * Math.PI * i / points;
+      const hx = 16 * Math.pow(Math.sin(t), 3);
+      const hy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      pts.push([cx + scale * hx, cy - scale * hy]);
+    }
+    return pts;
+  }
+  const HEAD_SHAPES = [heartPoly(400, 262, 14)];
+  const STEM = [[378, 493], [422, 493], [427, 752], [408, 772], [390, 760], [374, 600]];
+  const LEFT_LEAF = [[395, 594], [359, 554], [304, 535], [244, 541], [215, 562], [253, 609], [321, 631], [374, 617]];
+  const RIGHT_LEAF = [[406, 619], [442, 581], [491, 561], [553, 578], [578, 600], [535, 640], [476, 660], [425, 649]];
+
+  // ---------- text measuring ----------
+  const mctx = document.createElement("canvas").getContext("2d");
+  const fontStr = (size) => "bold " + (size * FS).toFixed(2) + "px " + FAMILY;
+  function measure(text, size) {
+    mctx.font = fontStr(size);
+    return mctx.measureText(text).width;
+  }
+  function lineSpace(text, sizes) {
+    let best = 0;
+    for (const s of sizes) {
+      mctx.font = fontStr(s);
+      const mt = mctx.measureText(text);
+      const h = (mt.fontBoundingBoxAscent !== undefined)
+        ? mt.fontBoundingBoxAscent + mt.fontBoundingBoxDescent
+        : s * FS * 1.2;
+      best = Math.max(best, h);
+    }
+    return best + 1;
+  }
+
+  // ---------- colour helpers (0..1 triples) ----------
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const mix = (a, b, k) => a.map((x, i) => x + (b[i] - x) * k);
+  const scaleC = (c, k) => c.map((x) => x * k);
+  const toRGB = (hex) => {
+    hex = hex.replace("#", "");
+    return [0, 2, 4].map((i) => parseInt(hex.substr(i, 2), 16) / 255);
+  };
+  const hx = (c) => "rgb(" + c.map((v) => Math.floor(clamp(v) * 255)).join(",") + ")";
+  const BGC = toRGB(BG);
+
+  function roseColor(x, y, size, edge) {
+    const dx = (x - 400) / 230, dy = (y - 270) / 200;
+    const rad = Math.sqrt(dx * dx + dy * dy);
+    let palette;
+    if (rad > 0.82) palette = ["#8f0b2b", "#ae1238", "#c41d48", "#d52b53"];
+    else if (rad > 0.48) palette = ["#b9143d", "#d21e49", "#e33b60", "#f04e73"];
+    else palette = ["#c51b49", "#e83c68", "#f16b8b", "#ff91a9"];
+    if (edge) palette = palette.concat(["#f5a0b3", "#ef6488"]);
+    if (size >= 14) palette = palette.concat(["#ff9ab1", "#ffd0dc"]);
+    return toRGB(choice(palette));
+  }
+  function greenColor(x, y, size) {
+    let palette = ["#3e8034", "#559c3c", "#72b84b", "#91cf62", "#b1e184"];
+    if (size >= 9) palette = palette.concat(["#a7d486", "#c0e19a"]);
+    return toRGB(choice(palette));
+  }
+  const colorFor = (x, y, size, kind, edge) =>
+    kind === "head" ? roseColor(x, y, size, edge) : greenColor(x, y, size);
+
+  // ---------- span maths ----------
+  function polygonSpans(poly, y) {
+    const xs = [];
+    for (let i = 0; i < poly.length; i++) {
+      const [x1, y1] = poly[i];
+      const [x2, y2] = poly[(i + 1) % poly.length];
+      if ((y1 <= y && y < y2) || (y2 <= y && y < y1)) {
+        if (y2 !== y1) xs.push(x1 + (y - y1) * (x2 - x1) / (y2 - y1));
+      }
+    }
+    xs.sort((a, b) => a - b);
+    const out = [];
+    for (let i = 0; i + 1 < xs.length; i += 2) out.push([xs[i], xs[i + 1]]);
+    return out;
+  }
+  function mergeSpans(spans) {
+    if (!spans.length) return [];
+    spans = spans.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const merged = [spans[0].slice()];
+    for (let i = 1; i < spans.length; i++) {
+      const [lo, hi] = spans[i];
+      const last = merged[merged.length - 1];
+      if (lo <= last[1] + 1) last[1] = Math.max(last[1], hi);
+      else merged.push([lo, hi]);
+    }
+    return merged;
+  }
+  function shapeSpans(polygons, y) {
+    let raw = [];
+    for (const poly of polygons) raw = raw.concat(polygonSpans(poly, y));
+    return mergeSpans(raw);
+  }
+  function intersectSpans(aSpans, bSpans, minimum) {
+    const out = [];
+    for (const a of aSpans) {
+      for (const b of bSpans) {
+        const lo = Math.max(a[0], b[0]), hi = Math.min(a[1], b[1]);
+        if (hi - lo >= minimum) out.push([lo, hi]);
+      }
+    }
+    return mergeSpans(out);
+  }
+
+  // ---------- phrase picking ----------
+  let phraseCycles = {};
+  function phraseFromPool(poolName, size) {
+    const pool = size >= 14 ? ACCENTS : (poolName !== "head" ? SHORT_PHRASES : HEAD_WORDS);
+    const key = poolName + "|" + (size >= 14 ? "accent" : "normal");
+    if (!phraseCycles[key] || !phraseCycles[key].items.length) {
+      phraseCycles[key] = { items: shuffle(pool.slice()), index: 0 };
+    }
+    const state = phraseCycles[key];
+    const phrase = state.items[state.index];
+    state.index++;
+    if (state.index >= state.items.length) state.items = [];
+    return phrase;
+  }
+  function sizeFor(poolName) {
+    if (poolName === "head") return weighted(HEAD_SIZES, HEAD_WEIGHTS);
+    return choice(poolName === "stem" ? [6, 7, 8] : [7, 8, 9, 10]);
+  }
+
+  // ---------- layout ----------
+  function buildRegion(polygons, yStart, yEnd, rowH, kind) {
+    const placed = [];
+    const half = rowH / 2;
+    const gap = kind === "head" ? GAP : 1;
+    let y = yStart + half;
+
+    while (y < yEnd - half) {
+      const top = shapeSpans(polygons, y - half + 1);
+      const bottom = shapeSpans(polygons, y + half - 1);
+      const row = intersectSpans(top, bottom, kind === "head" ? 19 : 16);
+
+      for (let [lo, hi] of row) {
+        const margin = kind === "head" ? 3 : 1;
+        lo += margin; hi -= margin;
+        const available = hi - lo;
+        if (available < 18) continue;
+
+        const line = [];
+        let cur = lo + uniform(0, Math.min(3, Math.max(1, available * 0.02)));
+        while (cur < hi - 15) {
+          const remaining = hi - cur;
+          const candidates = [];
+          const targetWidth = Math.min(74, Math.max(19, remaining * 0.22));
+          const tries = kind === "head" ? 45 : 55;
+          for (let t = 0; t < tries; t++) {
+            const size = sizeFor(kind);
+            const text = phraseFromPool(kind, size);
+            const width = measure(text, size);
+            if (width <= remaining && width >= Math.min(18, remaining * 0.20)) {
+              const score = Math.abs(width - targetWidth) + uniform(0, 13);
+              candidates.push({ score, text, size, width });
+            }
+          }
+          if (!candidates.length) break;
+          candidates.sort((a, b) => a.score - b.score);
+          const pick = choice(candidates.slice(0, Math.min(4, candidates.length)));
+          line.push({ x: cur + pick.width / 2, y, text: pick.text, size: pick.size, width: pick.width, kind });
+          cur += pick.width + gap;
+        }
+        if (!line.length) continue;
+
+        const used = line.reduce((s, it) => s + it.width, 0) + Math.max(0, line.length - 1) * gap;
+        const slack = Math.max(0, available - used);
+        const extra = line.length > 1 ? slack / (line.length - 1) : 0;
+        line.forEach((item, i) => {
+          item.x += extra * i;
+          item.edge = (i === 0 || i === line.length - 1);
+          item.color = colorFor(item.x, item.y, item.size, kind, item.edge);
+          placed.push(item);
+        });
+      }
+      y += rowH;
+    }
+    return placed;
+  }
+
+  function buildLayout() {
+    rand = mulberry32(SEED);
+    phraseCycles = {};
+    const headRowH = lineSpace("MANYA", [9, 10, 11]);
+    const leafRowH = lineSpace("Manya", [7, 8, 9]);
+    const stemRowH = lineSpace("Manya", [6, 7, 8]);
+
+    let placed = [];
+    placed = placed.concat(buildRegion(HEAD_SHAPES, 92, 505, headRowH, "head"));
+    placed = placed.concat(buildRegion([LEFT_LEAF], 543, 618, leafRowH, "leaf"));
+    placed = placed.concat(buildRegion([RIGHT_LEAF], 575, 651, leafRowH, "leaf"));
+    placed = placed.concat(buildRegion([STEM], 492, 773, stemRowH, "stem"));
+
+    const outer = placed.filter((p) => p.edge);
+    const inner = placed.filter((p) => !p.edge);
+    const ang = (p) => {
+      const a = Math.atan2(p.y - 270, p.x - 400);
+      return ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    };
+    outer.sort((a, b) => ang(a) - ang(b));
+    shuffle(inner);
+    return outer.concat(inner);
+  }
+
+  // ---------- canvas ----------
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const base = document.createElement("canvas");
+  const bctx = base.getContext("2d");
+  let k = 1;
+
+  let ORDER = [];
+  let active = [];
+  let done = [];
+  let shimmers = [];
+  let spawnIndex = 0;
+  let rate = 0;
+  let acc = 0;
+  let spawning = true;
+  let nextShimmer = 0;
+
+  function setup(c) {
+    c.setTransform(k, 0, 0, k, 0, 0);
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+  }
+  function text(c, p, color, x, y) {
+    c.font = fontStr(p.size);
+    c.fillStyle = hx(color);
+    c.fillText(p.text, x, y);
+  }
+  function drawSettled(c, p) {
+    text(c, p, scaleC(p.color, 0.23), p.x + 1, p.y + 2);
+    text(c, p, scaleC(p.color, 0.30), p.x, p.y);
+    text(c, p, p.color, p.x, p.y);
+  }
+  function drawActive(c, p) {
+    const u = clamp(p.frame / ANIM);
+    const eased = 1 - Math.pow(1 - u, 3);
+    const px = p.x + p.dx * (1 - eased);
+    const py = p.y - LIFT * (1 - eased);
+    text(c, p, mix(BGC, scaleC(p.color, 0.23), eased), px + 1, py + 2);
+    text(c, p, mix(BGC, scaleC(p.color, 0.30), eased * eased), px, py);
+    const flash = 0.55 * Math.sin(Math.PI * clamp((u - 0.58) / 0.42));
+    const col = mix(mix(BGC, p.color, Math.pow(eased, 1.35)), [1.0, 0.83, 0.88], flash);
+    text(c, p, col, px, py);
+  }
+
+  function redrawBase() {
+    bctx.setTransform(1, 0, 0, 1, 0, 0);
+    bctx.clearRect(0, 0, base.width, base.height);
+    setup(bctx);
+    for (const p of done) drawSettled(bctx, p);
+  }
+
+  function resize() {
+    const size = Math.max(100, Math.floor(Math.min(window.innerWidth, window.innerHeight)));
+    const dpr = window.devicePixelRatio || 1;
+    const px = Math.max(1, Math.round(size * dpr));
+    canvas.style.width = canvas.style.height = size + "px";
+    canvas.width = canvas.height = px;
+    base.width = base.height = px;
+    k = px / W;
+    redrawBase();
+  }
+
+  function render() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(base, 0, 0);
+    setup(ctx);
+    for (const p of active) drawActive(ctx, p);
+    for (const s of shimmers) {
+      text(ctx, s.p, mix(s.p.color, [1.0, 0.82, 0.88], 0.55), s.p.x, s.p.y);
+    }
+  }
+
+  function spawn(p) {
+    p.frame = 0;
+    p.dx = (Math.random() * 12) - 6;
+    active.push(p);
+  }
+
+  function tick() {
+    if (spawning) {
+      acc += rate;
+      while (acc >= 1) {
+        acc -= 1;
+        if (spawnIndex < ORDER.length) spawn(ORDER[spawnIndex++]);
+        else { spawning = false; break; }
+      }
+      if (spawnIndex >= ORDER.length) spawning = false;
+    }
+    const still = [];
+    for (const p of active) {
+      p.frame++;
+      if (p.frame >= ANIM) { done.push(p); drawSettled(bctx, p); }
+      else still.push(p);
+    }
+    active = still;
+  }
+
+  let last = 0, accTime = 0;
+  function loop(t) {
+    if (!last) last = t;
+    accTime += Math.min(t - last, 100);
+    last = t;
+    while (accTime >= TICK) { accTime -= TICK; tick(); }
+
+    if (!spawning && !active.length && done.length) {
+      if (t >= nextShimmer) {
+        shimmers.push({ p: done[Math.floor(Math.random() * done.length)], until: t + 210 });
+        nextShimmer = t + 145;
+      }
+    }
+    shimmers = shimmers.filter((s) => s.until > t);
+
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  function start() {
+    ORDER = buildLayout();
+    active = []; done = []; shimmers = [];
+    spawnIndex = 0; acc = 0; spawning = true;
+    rate = ORDER.length / Math.max(1, (DURATION * 1000 / TICK));
+    nextShimmer = 0;
+    redrawBase();
+  }
+
+  window.addEventListener("resize", resize);
+  canvas.addEventListener("click", start);   // click or tap to replay
+
+  resize();
+  start();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
